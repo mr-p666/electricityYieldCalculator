@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Pro Storage Calc v1.2</title>
+    <title>Pro Storage Calc v1.3</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -31,7 +31,7 @@
                 </div>
             </div>
             <div class="input-card">
-                <label>Batterie & Verschlei&szlig;</label>
+                <label>Batterie & Verschlei&szig;</label>
                 <div class="field-row">
                     <div class="input-unit-group"><input type="number" id="efficiency" value="85"><span class="hint">Effizienz %</span></div>
                     <div class="input-unit-group"><input type="number" id="wear" value="4.0" step="0.5"><span class="hint">Abnutzung ct</span></div>
@@ -84,6 +84,29 @@
 
     <script>
         let myChart;
+
+        const crosshairPlugin = {
+            id: 'crosshair',
+            afterDraw: (chart, args, options) => {
+                if (chart.tooltip?._active?.length) {
+                    const activePoint = chart.tooltip._active[0];
+                    const ctx = chart.ctx;
+                    const x = activePoint.element.x;
+                    const topY = chart.scales.y.top;
+                    const bottomY = chart.scales.y.bottom;
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(x, topY);
+                    ctx.lineTo(x, bottomY);
+                    ctx.lineWidth = 1;
+                    ctx.strokeStyle = 'rgba(59, 130, 246, 0.6)'; // blue-500 mit 60% Deckkraft
+                    // ctx.setLineDash([5, 5]); // Optional: Gestrichelte Linie
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+        };
 
         function loadSettings() {
             const saved = localStorage.getItem('storageCalcSettings');
@@ -145,24 +168,80 @@
                 const allBuy = prices.map(p => calcBuy(p.rawPrice));
                 const minLoad = Math.min(...allBuy);
 
+                const profitData = prices.map((p, i) => {
+                    const sellVal = calcSell(p.rawPrice);
+                    const profit = sellVal - minLoad - wear;
+                    return profit > 0 ? profit : 0; // Nur positive Werte anzeigen
+                });
+
                 if(myChart) myChart.destroy();
                 myChart = new Chart(document.getElementById('priceChart'), {
                     type: 'line',
                     data: {
                         labels: prices.map(p => p.label),
                         datasets: [
-                            { label: 'B&ouml;rsenpreis (ct)', data: prices.map(p => p.rawPrice), borderColor: '#3b82f6', tension: 0.3, pointRadius: prices.map(p => p.isNow ? 6 : 0), pointBackgroundColor: '#fff' },
-                            { label: 'Bezugskosten (Laden)', data: allBuy, borderColor: '#f87171', borderDash: [5,5], tension: 0.3, pointRadius: 0 }
+                            { 
+                                label: 'B&ouml;rsenpreis (ct)', 
+                                data: prices.map(p => p.rawPrice), 
+                                borderColor: '#3b82f6', 
+                                yAxisID: 'y',
+                                tension: 0.3, 
+                                pointRadius: prices.map(p => p.isNow ? 6 : 0), 
+                                pointBackgroundColor: '#fff' 
+                            },
+                            { 
+                                label: 'Bezugskosten (Laden)', 
+                                data: allBuy, 
+                                borderColor: '#f87171', 
+                                yAxisID: 'y',
+                                borderDash: [5,5], 
+                                tension: 0.3, 
+                                pointRadius: 0 
+                            },
+                            { 
+                                label: 'Gewinn-Potenzial (ct)', 
+                                data: profitData, 
+                                borderColor: '#4ade80',
+                                backgroundColor: 'rgba(74, 222, 128, 0.1)',
+                                fill: true,
+                                yAxisID: 'yProfit',
+                                tension: 0.4, 
+                                borderWidth: 3,
+                                pointRadius: 0 
+                            }
                         ]
                     },
                     options: { 
-                        maintainAspectRatio: false, 
-                        plugins: { legend: { labels: { color: '#94a3b8' } } },
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: { 
+                            legend: { labels: { color: '#94a3b8' } },
+                            tooltip: { /* ... Konfiguration wie gehabt ... */ },
+                            crosshair: {} 
+                        },
                         scales: { 
-                            y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } }, 
+                            y: { 
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                ticks: { color: '#64748b' }, 
+                                grid: { color: '#1e293b' },
+                                title: { display: true, text: 'ct/kWh (Preise)', color: '#64748b' }
+                            }, 
+                            yProfit: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                min: 0,
+                                suggestedMax: 10,
+                                grid: { drawOnChartArea: false }, // Verhindert doppelte Gitterlinien
+                                ticks: { color: '#4ade80' },
+                                title: { display: true, text: 'Reiner Gewinn (ct)', color: '#4ade80' }
+                            },
                             x: { ticks: { color: '#64748b', maxRotation: 45, minRotation: 45 }, grid: { display: false } } 
                         }
-                    }
+                    },
+                    plugins: [crosshairPlugin]
                 });
 
                 const tbody = document.querySelector('#resultTable tbody');
